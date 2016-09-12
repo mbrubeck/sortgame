@@ -160,7 +160,7 @@ SliceStack_Fragmentation(struct SliceStack *ss)
 int
 SliceStack_Fragmentation2(struct SliceStack *ss)
 {
-    int frag = 0;
+    int frag = 1;
     int i_last = 0;
     int i;
 
