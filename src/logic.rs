@@ -1,3 +1,19 @@
+/*
+    Copyright (C) 2016  Erik Beran
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 pub const MAX_SLICES : usize = 32;
 
@@ -41,6 +57,7 @@ pub fn prng_galois_lsfw_int_minmax(ctx : &mut PrngCtxGaloisLsfw, min : i32,
     return ((f * frange + 0.5) as i32) + min;
 }
 
+// global; not thread-safe etc
 static mut l_ctx : PrngCtxGaloisLsfw = PrngCtxGaloisLsfw {value:34};
 fn fake_rand(min : i32, max : i32) -> i32 {
     unsafe {
@@ -83,6 +100,8 @@ pub fn ss_flip(ss : &mut SliceStack, index : usize, direction : i32) {
     }
 }
 
+// Fragmentation value of stack; minimum is different slice types
+// i.e. if fragmentation - slice_types == 0, it's completed
 pub fn ss_fragmentation(ss : &SliceStack) -> i32 {
     let mut last_type : u8 = 0xFF;
     let mut frag : i32 = 0;
@@ -107,6 +126,7 @@ pub fn ss_fragmentation2(ss : &SliceStack) -> i32 {
     return frag;
 }
 
+// Returns bool, true on stack/level is complete
 pub fn ss_iscomplete(ss : &SliceStack) -> bool {
     let mut used_type_flags : u32 = 0;
     let mut last_type : u8 = 0xFF;
@@ -123,10 +143,17 @@ pub fn ss_iscomplete(ss : &SliceStack) -> bool {
 }
 
 pub fn ss_iscomplete2(ss : &SliceStack) -> bool {
-    return (ss_fragmentation2(ss) - ss.color_count) <= 0
+    // Fragmentation *may* be less than color count when color count doesn't
+    // represent the number of colors present in the actual stack (as apposed
+    // to what it was initialized with).
+    return (ss_fragmentation2(ss) - ss.color_count) <= 0;
 }
 
-pub fn ss_find_single_joining_move(ss : &SliceStack, direction : &mut i32) -> i32 {
+// Returns Option
+// Success: Tuple containing valid index and direction
+// Failure: None (Cannot find valid move)
+pub fn ss_find_single_joining_move(ss : &SliceStack)
+    -> Option<(usize,i32)> {
     let mut found_diff_type : bool;
     // left edge
     {
@@ -135,8 +162,7 @@ pub fn ss_find_single_joining_move(ss : &SliceStack, direction : &mut i32) -> i3
         for i in 0..ss.count as usize {
             if ss.slice_type[i] == outer_type {
                 if found_diff_type {
-                    *direction = 0;
-                    return i as i32;
+                    return Some((i,0));
                 }
             } else {
                 found_diff_type = true;
@@ -144,6 +170,7 @@ pub fn ss_find_single_joining_move(ss : &SliceStack, direction : &mut i32) -> i3
         }
     }
 
+    // We haven't found a matching type, try from the other end and direction
     // right edge
     {
         found_diff_type = false;
@@ -151,74 +178,88 @@ pub fn ss_find_single_joining_move(ss : &SliceStack, direction : &mut i32) -> i3
         for i in (0..(ss.count-1) as usize).rev() {
             if ss.slice_type[i] == outer_type {
                 if found_diff_type {
-                    *direction = 1;
-                    return i as i32;
+                    return Some((i,1));
                 }
             } else {
                 found_diff_type = true;
             }
         }
     }
-    return -1;
+    return None;
 }
 
-pub fn ss_find_single_joining_move2(ss : &SliceStack, direction : &mut i32) -> i32 {
+// Returns Option
+// Success: Tuple containing valid index and direction
+// Failure: None (Cannot find valid move)
+pub fn ss_find_single_joining_move2(ss : &SliceStack)
+    -> Option<(usize,i32)> {
     let mut last_index : usize = 0;
     // left edge
     {
         for i in 1..ss.count as usize {
             if (ss.slice_type[i] == ss.slice_type[0])
                 && (ss.slice_type[i] != ss.slice_type[last_index]) {
-                *direction = 0;
-                return i as i32;
+                return Some((i,0));
             }
             last_index = i;
         }
     }
 
+    // We haven't found a matching type, try from the other end and direction
     // right edge
     {
         last_index = (ss.count-1) as usize;
         for i in (0..(ss.count-2) as usize).rev() {
             if (ss.slice_type[i] == ss.slice_type[(ss.count-1) as usize])
                 && (ss.slice_type[i] != ss.slice_type[last_index]) {
-                *direction = 1;
-                return i as i32;
+                return Some((i,1));
             }
             last_index = i;
         }
     }
-    return -1;
+    return None;
 }
 
-pub fn ss_find_first_double_move(ss : &SliceStack, search_dir : i32,
-                                 direction : &mut i32) -> i32 {
+// Returns Option
+// Success: Tuple containing valid index and direction
+// Failure: None (Cannot find valid move)
+pub fn ss_find_first_double_move(ss : &SliceStack, search_dir : i32)
+    -> Option<(usize,i32)> {
     let mut c_index : [u8; MAX_SLICES] = [0xFF; MAX_SLICES];
     let mut last_type : u8 = 0xFF;
 
     if search_dir <= 0 {
         for i in 0..ss.count as usize {
+            // Color hasn't been recorded yet
             if c_index[ss.slice_type[i] as usize] == 0xFF {
                 c_index[ss.slice_type[i] as usize] = i as u8;
                 last_type = ss.slice_type[i];
+            // non-contiguous color found
+            // last_type will have been initialized by first iteration; don't check
+            // for 0xff. If last_type == current_type we don't need to update it
             } else if ss.slice_type[i] != last_type {
-                *direction = 1;
-                return (i-1) as i32;
+                return Some((i-1,1));
             }
         }
     } else {
         for i in (1..(ss.count-1) as usize).rev() {
+            // Color hasn't been recorded yet
             if c_index[ss.slice_type[i] as usize] == 0xFF {
                 c_index[ss.slice_type[i] as usize] = i as u8;
                 last_type = ss.slice_type[i];
+            // non-contiguous color found
+            // last_type will have been initialized by first iteration; don't check
+            // for 0xff. If last_type == current_type we don't need to update it
             } else if ss.slice_type[i] != last_type {
-                *direction = 0;
-                return (i+1) as i32;
+                return Some((i+1,0));
             }
         }
     }
 
-    return -1;
+    // This should only happen when level is complete; As long as there is
+    // fragmentation, there will be a way to move one section to the edge
+    // to start the double move.
+    return None;
 }
 
 #[cfg(test)]
@@ -318,11 +359,10 @@ mod test {
 
     #[test]
     fn lots_of_solutions() {
-        const SLICE_COUNT : i32 = 16;
+        const SLICE_COUNT : i32 = MAX_SLICES as i32;
         const COLOR_COUNT : i32 = 8;
         let mut search_dir : i32 = 0;
         let mut direction : i32 = 0;
-
 
         const SS_COUNT : usize = 1024;
         let mut ss : [SliceStack; SS_COUNT] = [SliceStack {
@@ -330,23 +370,33 @@ mod test {
             color_count : 0,
             slice_type : [0; MAX_SLICES]}; SS_COUNT];
 
-        //for s in ss.iter_mut() {
-        for s in &mut ss[..] {
+        for s in ss.iter_mut() {
             ss_init(s, SLICE_COUNT, COLOR_COUNT);
         }
 
         for s in &mut ss[..] {
             loop {
                 if ss_iscomplete(s) { break; }
-                let mut index = ss_find_single_joining_move(s, &mut direction);
-                if index < 0 {
-                    index = ss_find_first_double_move(s, search_dir, &mut direction);
-                    search_dir = !search_dir;
-                }
+                let mut index : usize = SLICE_COUNT as usize;
+                match ss_find_single_joining_move(s) {
+                    Some((i,d)) => { index = i; direction = d; },
+                    None    => {
+                        match ss_find_first_double_move(s, search_dir) {
+                            Some((ii,dd)) => { index = ii; direction = dd; },
+                            None    => {assert!(false); },
+                        };
+                        search_dir = !search_dir;
+                    },
+                };
 
-                assert!(index != -1);
-                if direction == 0 { direction = -1; }
-                ss_flip(s, (index + direction) as usize, direction);
+                assert!(index != SLICE_COUNT as usize);
+                if direction == 0 {
+                    direction = -1;
+                    index -= 1;
+                } else {
+                    index += 1;
+                }
+                ss_flip(s, index, direction);
             }
         }
     }

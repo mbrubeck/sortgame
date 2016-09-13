@@ -260,7 +260,6 @@ SliceStack_FindFirstDoubleMove(struct SliceStack *ss, int search_direction,
     last_type = 0xff;
 
     if (search_direction <= 0) {
-        // Could potentially randomize (search) direction for variation...
         for (i = 0; i < ss->count; ++i) {
             // color hasn't been recorded yet
             if (c_index[ss->slice_type[i]] == 0xff) {
