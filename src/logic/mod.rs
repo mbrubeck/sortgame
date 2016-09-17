@@ -127,7 +127,7 @@ pub fn ss_iscomplete(ss : &SliceStack) -> bool {
 // This only works if color_count is correct (i.e. if you tally up the
 // different colors in the color_type array, it will match color_count)
 pub fn ss_iscomplete2(ss : &SliceStack) -> bool {
-    return (ss_fragmentation(ss) - ss.color_count) <= 0;
+    return (ss_fragmentation2(ss) - ss.color_count) <= 0;
 }
 
 // Success: Valid index and direction
