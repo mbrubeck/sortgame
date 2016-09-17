@@ -3,8 +3,11 @@ name = "sortgame_rs"
 version = "0.1.0"
 authors = ["Erik Beran <eberan@gmail.com>"]
 
-[lib]
-path = "src/logic.rs"
-crate-type = ["staticlib"]
+#[lib]
+#path = "src/logic.rs"
+#crate-type = ["staticlib"]
 
 [dependencies]
+
+[profile.release]
+debug = true

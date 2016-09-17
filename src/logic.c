@@ -19,6 +19,7 @@
 
 #include <stdint.h> // int types, limits, macros
 #include <string.h> // memset
+#include <stdio.h>
 
 #define RUN_TEST 1
 
@@ -274,7 +275,7 @@ SliceStack_FindFirstDoubleMove(struct SliceStack *ss, int search_direction,
             }
         }
     } else {
-        for (i = ss->count-1; i > 1; --i) {
+        for (i = ss->count-1; i > 0; --i) {
             // color hasn't been recorded yet
             if (c_index[ss->slice_type[i]] == 0xff) {
                 c_index[ss->slice_type[i]] = i;
@@ -299,13 +300,14 @@ static void
 RunTests() {
     int const slice_count = 16;
     int const color_count = 8;
-    static int search_direction = 0;
+    static int search_direction = 1;
     int direction = 0;
     int index;
     int i;
 
     printf("starting big init\n");
-    int const ss_count = INT32_MAX / 1024;//1024*1024;
+    //int const ss_count = INT32_MAX / 1024;//1024*1024;
+    int const ss_count = 1024*1024;
     size_t const ss_size = sizeof(struct SliceStack) * ss_count;
     struct SliceStack* ss = (struct SliceStack*)malloc(ss_size);
     int *initial_frag = (int*)malloc(ss_count*sizeof(int));
@@ -316,6 +318,9 @@ RunTests() {
     for (i = 0; i < ss_count; ++i) {
         SliceStack_Create(ss+i, slice_count, color_count);
         initial_frag[i] = SliceStack_Fragmentation(ss+i);
+        int const c1 = SliceStack_IsComplete(ss+i);
+        int const c2 = SliceStack_IsComplete2(ss+i);
+        if (c1 != c2) { printf("%d != %d:%d\n", c1, c2, SliceStack_Fragmentation(ss+i)); }
     }
 
     printf("starting big solve\n");
