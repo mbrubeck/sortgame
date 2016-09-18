@@ -54,7 +54,8 @@ static int
 fakeRand(int rmin, int rmax) {
     static float const inv_max = 1.0f / (float)UINT32_MAX;
     float const f = galois_lfsr() * inv_max;
-    return (f * (float)(rmax-rmin) + 0.5f) + rmin;
+    float const frange = (float)(rmax-rmin);
+    return (f * frange + 0.5f) + rmin;
 }
 /* end PRNG helpers */
 
@@ -296,6 +297,7 @@ SliceStack_FindFirstDoubleMove(struct SliceStack *ss, int search_direction,
 #if (RUN_TEST)
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 static void
 RunTests() {
     int const slice_count = 16;
@@ -318,16 +320,18 @@ RunTests() {
     for (i = 0; i < ss_count; ++i) {
         SliceStack_Create(ss+i, slice_count, color_count);
         initial_frag[i] = SliceStack_Fragmentation(ss+i);
-        int const c1 = SliceStack_IsComplete(ss+i);
+        /*int const c1 = SliceStack_IsComplete(ss+i);
         int const c2 = SliceStack_IsComplete2(ss+i);
-        if (c1 != c2) { printf("%d != %d:%d\n", c1, c2, SliceStack_Fragmentation(ss+i)); }
+        if (c1 != c2) { printf("%d != %d:%d\n", c1, c2, SliceStack_Fragmentation(ss+i)); }*/
     }
 
     printf("starting big solve\n");
 
+    unsigned long long iters = 0;
     for (i = 0; i < ss_count; ++i) {
         direction = 0;
-        while (!SliceStack_IsComplete2(ss+i)) {
+        while (!SliceStack_IsComplete(ss+i)) {
+            ++iters;
             index = SliceStack_FindSingleJoiningMove2(ss+i, &direction);
             if (index < 0) {
                 index = SliceStack_FindFirstDoubleMove(ss+i,
@@ -342,6 +346,8 @@ RunTests() {
             }
         }
     }
+
+    printf("iters: %" PRIu64 "\n", iters);
 
     printf("finished big solve\n");
 

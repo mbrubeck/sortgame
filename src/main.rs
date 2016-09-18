@@ -12,19 +12,22 @@ fn main() {
     const SS_COUNT : usize = 1024*1024;
     let mut ss = vec![SliceStack::new(); SS_COUNT];
 
+
     for s in ss.iter_mut() {
         ss_init(s, SLICE_COUNT, COLOR_COUNT);
     }
 
+    let mut iters : usize = 0;
     for s in &mut ss[..] {
         while !ss_iscomplete(s) {
+            iters += 1;
         //loop {
             //if ss_iscomplete2(s) { break; }
             //let mut index = ss_find_single_joining_move(s, &mut direction).unwrap_or_else(
             //    || ss_find_first_double_move(s, search_dir, &mut direction).unwrap_or(
             //        SLICE_COUNT));
             direction = 0;
-            let mut index = ss_find_single_joining_move(s, &mut direction);
+            let mut index = ss_find_single_joining_move_unsafe(s, &mut direction);
             if index == -1 { index = ss_find_first_double_move(s, search_dir, &mut direction); }
             //assert!(index != -1);
             index += direction;
@@ -32,4 +35,6 @@ fn main() {
             //search_dir = !search_dir;
         }
     }
+
+    println!("total iterations: {}", iters);
 }
