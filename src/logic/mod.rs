@@ -17,9 +17,7 @@
 
 pub const MAX_SLICES : usize = 16;
 
-// ?????
-//mod prng;
-//extern crate prng;
+use prng::*;
 
 use std::ptr::*;
 

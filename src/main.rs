@@ -1,5 +1,6 @@
 
 mod logic;
+mod prng;
 
 use logic::*;
 
