@@ -10,4 +10,5 @@ authors = ["Erik Beran <eberan@gmail.com>"]
 [dependencies]
 
 [profile.release]
+lto = true
 #debug = true

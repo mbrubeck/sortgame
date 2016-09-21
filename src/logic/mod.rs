@@ -17,6 +17,10 @@
 
 pub const MAX_SLICES : usize = 16;
 
+// ?????
+//mod prng;
+//extern crate prng;
+
 use std::ptr::*;
 
 #[derive(Copy,Clone)]
@@ -31,30 +35,6 @@ impl SliceStack {
 }
 
 /* START PRNG HELPERS */
-pub struct PrngCtxGaloisLsfw {
-    value : u32
-}
-pub fn prng_seed_galois_lsfw(ctx : &mut PrngCtxGaloisLsfw, s : u32) {
-    ctx.value = s;
-}
-
-pub fn prng_galois_lsfw(ctx : &mut PrngCtxGaloisLsfw) -> u32 {
-    let shifted = ctx.value >> 1;
-    let negated = (-((ctx.value & 1) as i32)) as u32;
-    let anded = negated & 0x80200003;
-    ctx.value = shifted ^ anded;
-    return ctx.value;
-}
-
-pub fn prng_galois_lsfw_int_minmax(ctx : &mut PrngCtxGaloisLsfw, min : i32,
-                                   max : i32) -> i32 {
-    use std::u32;
-    const INV_INT_MAX : f32 = 1.0 / ((u32::MAX) as f32);
-    let f : f32 = (prng_galois_lsfw(ctx) as f32) * INV_INT_MAX;
-    let frange : f32 = (max-min) as f32;
-    return ((f * frange + 0.5) as i32) + min;
-}
-
 // global; not thread-safe etc
 static mut l_ctx : PrngCtxGaloisLsfw = PrngCtxGaloisLsfw {value:34};
 fn fake_rand(min : i32, max : i32) -> i32 {
@@ -68,6 +48,15 @@ pub fn ss_init(ss : &mut SliceStack, count : i32, color_count : i32) {
     ss.count = count;
     ss.color_count = color_count;
     let mut i : usize = 0;
+    for i in 0..ss.count as usize {
+        ss.slice_type[i] = fake_rand(0, color_count-1) as u8;
+    }
+}
+
+pub fn ss_init_unsafe(ss : &mut SliceStack, count : i32, color_count : i32) {
+    ss.count = count;
+    ss.color_count = color_count;
+    let mut i : usize = 0;
     while i < ss.count as usize {
         unsafe { *ss.slice_type.get_unchecked_mut(i) = fake_rand(0,color_count-1) as u8 };
         i += 1;
@@ -75,14 +64,19 @@ pub fn ss_init(ss : &mut SliceStack, count : i32, color_count : i32) {
 }
 
 fn ss_swapslices(ss : &mut SliceStack, i0 : i32, i1 : i32) {
+    ss.slice_type.swap(i0 as usize, i1 as usize);
+}
+
+fn ss_swapslices_unsafe(ss : &mut SliceStack, i0 : i32, i1 : i32) {
+    // This could also be done with raw pointers, but this shoudl be
+    // equivalent in code generation
     unsafe {
-        let mut array = ss.slice_type.as_ptr();
-        let t0 = array.offset(i0 as isize) as *mut u8;
-        let t1 = array.offset(i1 as isize) as *mut u8;
-        swap(t0, t1);
+        swap(ss.slice_type.get_unchecked_mut(i0 as usize),
+            ss.slice_type.get_unchecked_mut(i1 as usize));
     }
 }
 
+// Manually flipping
 pub fn ss_flip(ss : &mut SliceStack, index : i32, direction : i32) {
     if direction > 0 {
         let end = ss.count - 1;
@@ -90,19 +84,22 @@ pub fn ss_flip(ss : &mut SliceStack, index : i32, direction : i32) {
         for i in 0..count {
             let mirror = end - i;
             let pos = index + i;
-            ss_swapslices(ss, pos, mirror);
+            //ss_swapslices(ss, pos, mirror);
+            ss_swapslices_unsafe(ss, pos, mirror);
         }
     } else {
         let count = (index + 1) / 2;
         for i in 0..count {
             let mirror = i;
             let pos = index - i;
-            ss_swapslices(ss, pos, mirror);
+            //ss_swapslices(ss, pos, mirror);
+            ss_swapslices_unsafe(ss, pos, mirror);
         }
     }
 }
 
-pub fn ss_flip_safe(ss : &mut SliceStack, index : i32, direction : i32) {
+// Flipping using Rust slices and API's
+pub fn ss_flip_rsslice(ss : &mut SliceStack, index : i32, direction : i32) {
     if direction > 0 {
         let slice : &mut [u8] = &mut ss.slice_type[(index as usize)..(ss.count as usize)];
         slice.reverse();
@@ -115,6 +112,19 @@ pub fn ss_flip_safe(ss : &mut SliceStack, index : i32, direction : i32) {
 // Fragmentation value of stack; minimum is different slice types
 // i.e. if fragmentation - slice_types == 0, it's completed
 pub fn ss_fragmentation(ss : &SliceStack) -> i32 {
+    let mut last_type : u8 = 0xFF;
+    let mut frag : i32 = 0;
+    let mut i : usize = 0;
+    while i < (ss.count as usize) {
+        if last_type != ss.slice_type[i] {
+            frag += 1;
+        }
+        last_type = ss.slice_type[i];
+    }
+    return frag;
+}
+
+pub fn ss_fragmentation_unsafe(ss : &SliceStack) -> i32 {
     let mut last_type : u8 = 0xFF;
     let mut frag : i32 = 0;
     let mut i : usize = 0;
@@ -140,6 +150,21 @@ pub fn ss_fragmentation2(ss : &SliceStack) -> i32 {
 
 // Returns bool, true on stack/level is complete
 pub fn ss_iscomplete(ss : &SliceStack) -> bool {
+    let mut used_type_flags : u32 = 0;
+    let mut last_type : u8 = 0xFF;
+    let mut type_flag : u32;
+    for t in ss.slice_type[0..ss.count as usize].iter() {
+        type_flag = 1 << *t;
+        if ((used_type_flags & type_flag) != 0) && (last_type != *t) {
+            return false;
+        }
+        used_type_flags |= type_flag;
+        last_type = *t;
+    }
+    return true;
+}
+
+pub fn ss_iscomplete_unsafe(ss : &SliceStack) -> bool {
     let mut used_type_flags : u32 = 0;
     let mut last_type : u32 = 0x000000FF;
     let mut i : i32 = 0;
@@ -302,9 +327,61 @@ pub fn ss_find_first_double_move(ss : &SliceStack, search_dir : i32, dir : &mut 
         i = 0;
         while i < ss.count {
             // Color hasn't been recorded yet
+            let t = ss.slice_type[i as usize];
+            let ci : &mut u8 = &mut c_index[t as usize];
+            if *ci == 0xFF {
+                *ci = i as u8;
+                last_type = t
+            // non-contiguous color found
+            // last_type will have been initialized by first iteration; don't check
+            // for 0xff. If last_type == current_type we don't need to update it
+            } else if t != last_type {
+                *dir = 1;
+                return i - 1;
+            }
+            i += 1;
+        }
+    } else {
+        i = ss.count - 1;
+        while i > 0 {
+            // Color hasn't been recorded yet
+            let t = ss.slice_type[i as usize];
+            let ci : &mut u8 = &mut c_index[t as usize];
+            if *ci == 0xFF {
+                *ci = i as u8;
+                last_type = t;
+            // non-contiguous color found
+            // last_type will have been initialized by first iteration; don't check
+            // for 0xff. If last_type == current_type we don't need to update it
+            } else if t != last_type {
+                *dir = -1;
+                return i + 1;
+            }
+            i -= 1;
+        }
+    }
+
+    // This should only happen when level is complete; As long as there is
+    // fragmentation, there will be a way to move one section to the edge
+    // to start the double move.
+    unreachable!();
+    return -1;
+}
+
+pub fn ss_find_first_double_move_unsafe(ss : &SliceStack, search_dir : i32, dir : &mut i32)
+    -> i32 {
+    let mut c_index : [u8; MAX_SLICES] = [0xFF; MAX_SLICES];
+    let mut last_type : u8 = 0xFF;
+    let mut i : i32;
+
+    if search_dir <= 0 {
+        i = 0;
+        while i < ss.count {
             let t = unsafe { *ss.slice_type.get_unchecked(i as usize) };
-            if unsafe { *c_index.get_unchecked(t as usize) == 0xFF } {
-                unsafe { *c_index.get_unchecked_mut(t as usize) = i as u8; }
+            let ci = unsafe { c_index.get_unchecked_mut(t as usize) };
+            // Color hasn't been recorded yet
+            if *ci == 0xFF {
+                *ci = i as u8;
                 last_type = t
             // non-contiguous color found
             // last_type will have been initialized by first iteration; don't check
@@ -319,9 +396,10 @@ pub fn ss_find_first_double_move(ss : &SliceStack, search_dir : i32, dir : &mut 
         i = ss.count - 1;
         while i > 0 {
             let t = unsafe { *ss.slice_type.get_unchecked(i as usize) };
+            let ci = unsafe { c_index.get_unchecked_mut(t as usize) };
             // Color hasn't been recorded yet
-            if unsafe { *c_index.get_unchecked(t as usize) == 0xFF } {
-                unsafe { *c_index.get_unchecked_mut(t as usize) = i as u8; }
+            if *ci == 0xFF {
+                *ci = i as u8;
                 last_type = t;
             // non-contiguous color found
             // last_type will have been initialized by first iteration; don't check
@@ -396,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn ss_is_complete_test() {
+    fn ss_iscomplete_test() {
         let mut ss : SliceStack = SliceStack {
             count : 4,
             color_count : 3,
